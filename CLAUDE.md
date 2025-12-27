@@ -13,13 +13,19 @@ This is a BricsCAD plugin (ModuleBackground) for automated architectural draftin
 ## Build and Development Commands
 
 ### Building the Project
+**IMPORTANT:** Do NOT build this project while BricsCAD is running. The BricsCAD application locks the plugin DLL (`ModuleBackground.dll`) while loaded, causing build failures. You must either:
+- Close BricsCAD before building, OR
+- Use the BricsCAD `NETUNLOAD` command to unload the plugin before building
+
 ```bash
-# Build using dotnet CLI
+# Build using dotnet CLI (only when BricsCAD is closed)
 dotnet build ModuleBackground.csproj
 
 # Build for release
 dotnet build ModuleBackground.csproj -c Release
 ```
+
+**NOTE:** Code analysis and editing can be done without building. Focus on code changes rather than compilation.
 
 ### Project File Structure
 - **Source code:** `ModuleBackground/` directory
@@ -199,9 +205,11 @@ All commands are prefixed with `ST_` and registered under group `Nctri_Module`:
 
 ## Development Notes
 
+- **DO NOT BUILD while BricsCAD is running** - the DLL is locked by BricsCAD and cannot be overwritten
 - The plugin integrates closely with BricsCAD's document management system
 - All drawing operations must be wrapped in document locks
 - The main menu (FormMenu) is modeless and persists during CAD operations
 - Symbol block definitions are cached in the drawing's BlockTable for reuse
 - Japanese text encoding may be relevant for INI file parsing
 - The project uses relative paths for external DLL dependencies - these must exist at runtime
+- After code changes, reload the plugin in BricsCAD using `NETLOAD` or restart BricsCAD

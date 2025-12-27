@@ -378,10 +378,46 @@ public class CSplitRoom
 			{
 				break;
 			}
+
+			// Check if point is in same wall (not on same horizontal or vertical line)
+			bool bInSameWall = CheckPointInSameWall(doc, ptSel, point.Value);
+
+			Point3d ptNew = point.Value;
+
+			if (bInSameWall)
+			{
+				// Prompt for direction
+				string direction = "";
+				do
+				{
+					PromptStringOptions promptStringOptions = new PromptStringOptions("\nInput direction horizontal with Squares [Left(L)/Right(R)/Top(T)/Bottom(B)] <Left(L)>:");
+					promptStringOptions.AllowSpaces = false;
+					PromptResult promptResult = editor.GetString(promptStringOptions);
+					if (promptResult.Status == PromptStatus.Cancel)
+					{
+						DeleteEntityS(database, ids);
+						return false;
+					}
+					direction = promptResult.StringResult;
+					if (string.IsNullOrEmpty(direction))
+					{
+						direction = "L";
+					}
+					else
+					{
+						direction = direction.Substring(0, 1).ToUpper();
+					}
+				}
+				while (direction != "L" && direction != "R" && direction != "T" && direction != "B");
+
+				// Adjust the point based on direction
+				ptNew = AdjustPointByDirection(doc, ptSel, point.Value, direction);
+			}
+
 			Line line = new Line();
 			line.SetDatabaseDefaults(database);
 			line.StartPoint = ptSel;
-			line.EndPoint = point.Value;
+			line.EndPoint = ptNew;
 			if (line.Length <= 1.0)
 			{
 				line.Dispose();
@@ -394,7 +430,7 @@ public class CSplitRoom
 			{
 				ids.Add(objectId);
 			}
-			ptSel = point.Value;
+			ptSel = ptNew;
 		}
 		if (ids.Count <= 0)
 		{
@@ -532,6 +568,70 @@ public class CSplitRoom
 		polyline.Dispose();
 		polyline = null;
 		return true;
+	}
+
+	public bool CheckPointInSameWall(Document doc, Point3d ptPrev, Point3d ptNew)
+	{
+		// Check if both points are on the SAME wall line entity
+		TypedValue[] typedVals = new TypedValue[2]
+		{
+			new TypedValue(0, "line"),
+			new TypedValue(8, GlobalFunction.S_layerWall)
+		};
+		SelectionFilter filter = new SelectionFilter(typedVals);
+		PromptSelectionResult promptSelectionResult = doc.Editor.SelectAll(filter);
+		if (promptSelectionResult.Status != PromptStatus.OK)
+		{
+			return false;
+		}
+
+		ObjectId[] objectIds = promptSelectionResult.Value.GetObjectIds();
+		foreach (ObjectId objectId in objectIds)
+		{
+			Line line = objectId.GetObject(OpenMode.ForRead) as Line;
+			if (line == null)
+			{
+				continue;
+			}
+			int colorIndex = line.ColorIndex;
+			if (colorIndex == GlobalFunction.nColorWall)
+			{
+				Point3d closestPointToPrev = line.GetClosestPointTo(ptPrev, extend: false);
+				Point3d closestPointToNew = line.GetClosestPointTo(ptNew, extend: false);
+
+				double distPrev = ptPrev.DistanceTo(closestPointToPrev);
+				double distNew = ptNew.DistanceTo(closestPointToNew);
+
+				// Check if both points are on the same wall line entity
+				if (distPrev < 1.0 && distNew < 1.0)
+				{
+					line.Dispose();
+					return true; // Both points are on the same wall line
+				}
+			}
+			line.Dispose();
+		}
+
+		// Points are not on the same wall line
+		return false;
+	}
+
+	public Point3d AdjustPointByDirection(Document doc, Point3d ptPrev, Point3d ptNew, string direction)
+	{
+		// Adjust point based on direction relative to previous point
+		switch (direction)
+		{
+			case "L": // Left - keep same Y, use new X if it's to the left
+				return new Point3d(ptNew.X, ptPrev.Y, 0.0);
+			case "R": // Right - keep same Y, use new X
+				return new Point3d(ptNew.X, ptPrev.Y, 0.0);
+			case "T": // Top - keep same X, use new Y if it's above
+				return new Point3d(ptPrev.X, ptNew.Y, 0.0);
+			case "B": // Bottom - keep same X, use new Y
+				return new Point3d(ptPrev.X, ptNew.Y, 0.0);
+			default:
+				return ptNew;
+		}
 	}
 
 	public Region GetRegionMax(List<Region> lstRegion)

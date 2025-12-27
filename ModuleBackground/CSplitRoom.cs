@@ -410,11 +410,133 @@ public class CSplitRoom
 				}
 				while (direction != "L" && direction != "R" && direction != "T" && direction != "B");
 
-				// Adjust the point based on direction
-				ptNew = AdjustPointByDirection(doc, ptSel, point.Value, direction);
-			}
+                // Adjust the point based on direction
+                ptNew = AdjustPointByDirection(doc, ptSel, point.Value, direction);
 
-			Line line = new Line();
+                // Prompt for thickness after direction is selected
+                PromptIntegerOptions promptThicknessOpts = new PromptIntegerOptions("\nInput thickness:");
+                promptThicknessOpts.AllowNone = true;
+                PromptIntegerResult thicknessResult = editor.GetInteger(promptThicknessOpts);
+                if (thicknessResult.Status != PromptStatus.OK)
+                {
+                    DeleteEntityS(database, ids);
+                    return false;
+                }
+                int thicknessValue = thicknessResult.Value;
+                double dThickness = (double)thicknessValue * 1.0 / 2.0;
+
+                Vector3d dirVector = (point.Value - ptSel).GetNormal();
+                Vector3d perpVector = new Vector3d(-dirVector.Y, dirVector.X, 0.0); // Perpendicular direction
+
+                // Determine offset direction based on T/B direction
+                Vector3d offsetDirection = perpVector;
+
+                if (direction == "B")
+                {
+                    // For bottom, we want to draw BELOW the line
+                    if (point.Value.Y < ptSel.Y)
+                    {
+                        offsetDirection = perpVector;
+                    }
+                    else
+                    {
+                        offsetDirection = -perpVector;
+                    }
+                }
+                else if (direction == "T")
+                {
+                    // For top, we want to draw ABOVE the line
+                    if (point.Value.Y > ptSel.Y)
+                    {
+                        offsetDirection = -perpVector;
+                    }
+                    else
+                    {
+                        offsetDirection = perpVector;
+                    }
+                }
+
+                // Calculate offset points - center line and one offset line only
+                Point3d ptSelCenter = ptSel;
+                Point3d ptNewCenter = point.Value;
+                Point3d ptSelOffset = ptSel + offsetDirection * (dThickness * 2);
+                Point3d ptNewOffset = point.Value + offsetDirection * (dThickness * 2);
+
+                // Create the rectangle as a collection of lines
+                DBObjectCollection dbObjs = new DBObjectCollection();
+
+                // Draw first line (center line along the wall)
+                Line thickLine1 = new Line();
+                thickLine1.SetDatabaseDefaults(database);
+                thickLine1.StartPoint = ptSelCenter;
+                thickLine1.EndPoint = ptNewCenter;
+                dbObjs.Add(thickLine1);
+
+                // Draw second line (offset line)
+                Line thickLine2 = new Line();
+                thickLine2.SetDatabaseDefaults(database);
+                thickLine2.StartPoint = ptSelOffset;
+                thickLine2.EndPoint = ptNewOffset;
+                dbObjs.Add(thickLine2);
+
+                // Draw connecting lines to close the rectangle
+                Line connectLine1 = new Line();
+                connectLine1.SetDatabaseDefaults(database);
+                connectLine1.StartPoint = ptSelCenter;
+                connectLine1.EndPoint = ptSelOffset;
+                dbObjs.Add(connectLine1);
+
+                Line connectLine2 = new Line();
+                connectLine2.SetDatabaseDefaults(database);
+                connectLine2.StartPoint = ptNewCenter;
+                connectLine2.EndPoint = ptNewOffset;
+                dbObjs.Add(connectLine2);
+
+                // Create region from the 4 lines
+                ids.Clear();
+                try
+                {
+                    DBObjectCollection finalRegions = Region.CreateFromCurves(dbObjs);
+
+                    // Dispose the temporary lines
+                    foreach (DBObject item in dbObjs)
+                    {
+                        item.Dispose();
+                    }
+
+                    // Add the region to the database
+                    foreach (DBObject item4 in finalRegions)
+                    {
+                        if (item4 is Region)
+                        {
+                            Region finalRegion = item4 as Region;
+                            if (finalRegion.Area > 0.0)
+                            {
+                                string finalHandle = AppendEntityWall(database, finalRegion);
+                                ObjectId finalId = database.GetObjectId(createIfNotFound: false, new Handle(Convert.ToInt64(finalHandle, 16)), 0);
+                                if (!finalId.IsNull)
+                                {
+                                    ids.Add(finalId);
+                                }
+                            }
+                        }
+                        item4.Dispose();
+                    }
+                }
+                catch (Exception)
+                {
+                    // Dispose objects on error
+                    foreach (DBObject item in dbObjs)
+                    {
+                        item.Dispose();
+                    }
+                    return false;
+                }
+
+                return true;
+            }
+
+            Line line = new Line();
 			line.SetDatabaseDefaults(database);
 			line.StartPoint = ptSel;
 			line.EndPoint = ptNew;
@@ -616,25 +738,52 @@ public class CSplitRoom
 		return false;
 	}
 
-	public Point3d AdjustPointByDirection(Document doc, Point3d ptPrev, Point3d ptNew, string direction)
-	{
-		// Adjust point based on direction relative to previous point
-		switch (direction)
-		{
-			case "L": // Left - keep same Y, use new X if it's to the left
-				return new Point3d(ptNew.X, ptPrev.Y, 0.0);
-			case "R": // Right - keep same Y, use new X
-				return new Point3d(ptNew.X, ptPrev.Y, 0.0);
-			case "T": // Top - keep same X, use new Y if it's above
-				return new Point3d(ptPrev.X, ptNew.Y, 0.0);
-			case "B": // Bottom - keep same X, use new Y
-				return new Point3d(ptPrev.X, ptNew.Y, 0.0);
-			default:
-				return ptNew;
-		}
-	}
+    public Point3d AdjustPointByDirection(Document doc, Point3d ptPrev, Point3d ptNew, string direction)
+    {
+        // Adjust point based on direction relative to previous point
+        // Determine if this is a horizontal wall (Y is same) or vertical wall (X is same)
+        bool isHorizontalWall = Math.Abs(ptPrev.Y - ptNew.Y) < 0.001;
 
-	public Region GetRegionMax(List<Region> lstRegion)
+        switch (direction)
+        {
+            case "L": // Left - keep same Y, use new X if it's to the left
+                return new Point3d(ptNew.X, ptPrev.Y, 0.0);
+
+            case "R": // Right - keep same Y, use new X
+                return new Point3d(ptNew.X, ptPrev.Y, 0.0);
+
+            case "T": // Top - draw above the wall line
+                if (isHorizontalWall)
+                {
+                    // For horizontal wall, top means +Y direction (above)
+                    // Always use the NEW Y value which is the click point
+                    return new Point3d(ptPrev.X, ptNew.Y, 0.0);
+                }
+                else
+                {
+                    // For vertical wall, keep same X
+                    return new Point3d(ptPrev.X, ptNew.Y, 0.0);
+                }
+
+            case "B": // Bottom - draw below the wall line
+                if (isHorizontalWall)
+                {
+                    // For horizontal wall, bottom means -Y direction (below)
+                    // Always use the NEW Y value which is the click point
+                    return new Point3d(ptPrev.X, ptNew.Y, 0.0);
+                }
+                else
+                {
+                    // For vertical wall, keep same X
+                    return new Point3d(ptPrev.X, ptNew.Y, 0.0);
+                }
+
+            default:
+                return ptNew;
+        }
+    }
+
+    public Region GetRegionMax(List<Region> lstRegion)
 	{
 		double num = 0.0;
 		Region result = null;

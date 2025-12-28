@@ -2380,9 +2380,12 @@ public class CInsSymNearSquares
 			}
 			while (!flag);
             string inputText = "HD15KN";
-            PromptStringOptions promptTextOptions = new PromptStringOptions("\nInput Text <HD15KN>:");
-            promptTextOptions.AllowSpaces = true;
-            promptTextOptions.DefaultValue = "HD15KN";
+            PromptStringOptions promptTextOptions = new PromptStringOptions("\nInput value [15/20/26/30] <15>: ")
+            {
+                AllowSpaces = false,
+                DefaultValue = "15"
+            };
+
             PromptResult textPrompt = editor.GetString(promptTextOptions);
 
             if (textPrompt.Status == PromptStatus.Cancel)
@@ -2395,11 +2398,55 @@ public class CInsSymNearSquares
                 return;
             }
 
-            inputText = textPrompt.StringResult;
-            if (string.IsNullOrEmpty(inputText))
+            string inputValue = textPrompt.StringResult;
+
+            // Use default if empty
+            if (string.IsNullOrWhiteSpace(inputValue))
             {
-                inputText = "HD15KN";
+                inputValue = "15";
             }
+
+            // Validate against allowed values and retry if invalid
+            int[] allowedValues = { 15, 20, 26, 30 };
+            int parsedValue = 15; // default value
+            bool isValid = false;
+
+            while (!isValid)
+            {
+                if (int.TryParse(inputValue, out parsedValue))
+                {
+                    // Check if value is in allowed list
+                    foreach (int allowed in allowedValues)
+                    {
+                        if (parsedValue == allowed)
+                        {
+                            isValid = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!isValid)
+                {
+                    editor.WriteMessage("\nInvalid value. Please enter 15, 20, 26, or 30.");
+                    textPrompt = editor.GetString(promptTextOptions);
+
+                    if (textPrompt.Status == PromptStatus.Cancel)
+                    {
+                        split.DeleteRegionS(doc.Database, lstRegion, null);
+                        split.DeleteRegionS(doc.Database, lstRegionNotMax, reBound);
+                        VisibaleEntity(objectIdCollection);
+                        editor.Regen();
+                        editor.UpdateScreen();
+                        return;
+                    }
+
+                    inputValue = string.IsNullOrWhiteSpace(textPrompt.StringResult) ? "15" : textPrompt.StringResult;
+                }
+            }
+
+            // ? FINAL TEXT
+            inputText = $"HD{parsedValue}KN";
             // Store it for later use by cmdDrawLeader
             GlobalFunction.g_CurrentTextInput = inputText;
             int nDirect = 1;

@@ -2301,7 +2301,7 @@ public class CInsSymNearSquares
 			if (!CheckObjectIsSquare(item2))
 			{
 				item2.UpgradeOpen();
-				item2.Visible = false;
+				item2.Visible = true;
 				continue;
 			}
 			CSquares cSquares = new CSquares();
